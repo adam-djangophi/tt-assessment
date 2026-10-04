@@ -22,7 +22,7 @@ make db     # psql shell into the Docker Postgres
 
 | Layer | File | Responsibility |
 | --- | --- | --- |
-| Request schema | `app/schemas.py` → `ChangeOrderCreate` | Request Shape and value rules; anything checkable without the dat§abase |
+| Request schema | `app/schemas.py` → `ChangeOrderCreate` | Request Shape and value rules; anything checkable without the database |
 | Service | `app/services/change_orders.py` → `raise_change_order` | Service for business logic, separates its from router allowing it to stay thin |
 | Router | `app/routers/change_orders.py` | Handles HTTP and response delagates logic to afore mentioend service |
 
@@ -36,10 +36,13 @@ without HTTP and reusable by future edit/import endpoints. `app/domain/` is docu
 ### Decisions
 
 - **Raised date defaults to today.** Logging a change on the day is the common case, and
-  forcing the field adds friction for no gain. Planners can still backdate.
+  forcing the field adds friction for no gain. Planners can still backdate. The downside is that
+  if someone forgets to backdate, the wrong date goes in quietly. Making it required would catch
+  that, but I think it'd mostly just annoy people.
   - The server runs in UTC, so "today" is the UTC date. Planners in different timezones
     can be on *tomorrow* so future dates are rejected beyond
-    **today + 1 day**.
+    **today + 1 day**. That does mean someone in the UK can enter tomorrow's date, which I'm
+    fine with as a small loophole.
 - **Status is optional, defaults to `draft`, and only `draft` / `submitted` are accepted.**
   Approving or rejcting is a separate control step by a different role, and approved
   `cost_delta` feeds forecast at completion. Allowing it on create would let a planner
@@ -52,7 +55,14 @@ without HTTP and reusable by future edit/import endpoints. `app/domain/` is docu
   right work package", and the domain model says change orders roll up to the project through
   work packages. All seeded change orders have one. A change order without a work package would
   be missing from per-package cost views, which is the kind of bad record the brief warns about.
-  Both live projects have work packages, so this never blocks a valid request.
+  Both live projects have work packages, so this never blocks a valid request. If the business
+  does want project-level change orders that don't sit under one package, this would need
+  relaxing.
+- **Change orders can only be raised on live projects (`in_delivery`), otherwise 409.** The
+  story is about "a planner working a live project", so I read that as a rule rather than flavour
+  text. It's my assumption, not something the brief spells out. If it's wrong, it's one line in
+  the service (`RAISABLE_PROJECT_STATUSES`). I went with 409 because the request itself is fine;
+  it's the project's current state that blocks it.
 - **409 for a duplicate reference, 422 for a bad work package.** A bad work package makes the
   request itself invalid. A duplicate is a valid request that conflicts with existing data.
 - **References and work package codes are upper-cased** before checks and storage, so `co-001`
@@ -62,12 +72,18 @@ without HTTP and reusable by future edit/import endpoints. `app/domain/` is docu
 - **Money is `Decimal` with `max_digits=14, decimal_places=2`**, matching the `Numeric(14, 2)`
   column. Without the bound, an oversized value passed validation and failed in Postgres as a 500.
   The OpenAPI schema is overridden to plain `number`; Pydantic's default for `Decimal` is
-  `number | string`, which generated an awkward TypeScript type.
+  `number | string`, which generated an awkward TypeScript type. The catch is the frontend sees
+  money as a JS float. At two decimal places and this size that's safe, but it isn't exact
+  decimal maths all the way through.
 - **`scheduleDeltaDays` is capped at 3650 (10 years) and strict.** The cap is a sanity limit
   well under Postgres `int4`; before it, `3000000000` caused a 500. Strict mode stops `true`
   being read as `1`.
 - **`extra="forbid"`**, so typos and attempts to set server-owned fields fail loudly instead of
-  being dropped silently.
+  being dropped silently. It's less forgiving: a client sending a field we don't know about yet
+  gets a 422. For financial records I'd rather be strict.
+- **I check for a duplicate before inserting**, even though the unique constraint would catch it
+  anyway. It costs an extra query, but it gives a clean 409 in the normal case, and the constraint
+  is only there for races.
 
 ## Validation
 
@@ -78,6 +94,7 @@ Source: [create-change-order-flow.mmd](base-app/docs/create-change-order-flow.mm
 | Rule | Status | Error `loc` |
 | --- | --- | --- |
 | Rejects a project that does not exist | 404 | `"Project not found"` (I reused existing dependency) |
+| Rejects a project that isn't live (`in_delivery`) | 409 | `path.project_id` |
 | Rejects a `reference` / `title` that is missing, blank or whitespace-only, or longer than 50 / 255 characters | 422 | `body.reference` / `body.title` |
 | Rejects a `costDelta` that is zero or negative, has more than 2 decimal places, or has more than 12 digits before the decimal point | 422 | `body.costDelta` |
 | Rejects a `scheduleDeltaDays` that is zero or negative, over 3650, or not a JSON integer (`true`, `"5"`, `2.0`) | 422 | `body.scheduleDeltaDays` |
@@ -92,7 +109,7 @@ validation errors, so clients parse one format.
 
 
 
-  ## Concurrency
+## Concurrency
 
 - **Duplicate references:** Before inserting, the service checks whether the reference already exists on the project and returns a specific 409. If two requests race past that check at the same moment, the database's unique constraint rejects the second, which is mapped to the same 409.
 - **No lost updates:** creating a change order only inserts a row, and never updates a stored total.
@@ -121,11 +138,14 @@ validation errors, so clients parse one format.
   cleanup, and a way to identify the caller (there's no auth yet), so it's more than this slice
   warrants.
 - **"Today" in the project's timezone** would be more correct than UTC plus one day of slack, but
-  projects have no timezone field. - This would require identifying this this being nullable for exisitng entries is ok
+  projects have no timezone field. Adding one is a migration, but it could be nullable, with
+  existing projects falling back to UTC.
 - **Tests run on SQLite**, which doesn't enforce integer widths or exercise real concurrency.
   A Postgres test run in CI would have caught the `int4` overflow directly.
-- `NaN` / `Infinity` in `costDelta` (not valid JSON, but accepted by Python's parser) are rejected - Gives 500 -  Fix would be a RequestValidationError handler that converts non-finite input values to strings before rendering th§e 422.
-  but FastAPI then fails to render the 422, which surfaces as a 500. Nothing is saved.
+- **`NaN` / `Infinity` in `costDelta` return a 500.** They aren't valid JSON, but Python's parser
+  accepts them. Validation rejects them and nothing is saved, but FastAPI then can't render the
+  422, so the client gets a 500. I spotted this after the 90 minutes. The fix is a
+  `RequestValidationError` handler that turns non-finite inputs into strings before rendering.
 - No auth or roles, audit trail, or edit/approve workflow. Those are out of scope for this slice.
 
 ## Testing
