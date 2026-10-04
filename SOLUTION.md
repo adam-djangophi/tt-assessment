@@ -33,28 +33,6 @@ without HTTP and reusable by future edit/import endpoints. `app/domain/` is docu
 
 - Annotated test requests (every success and error case, with the response each returns): [change_order_post_requests.md](base-app/docs/change_order_post_requests.md)
 
-
-## Validation
-
-![Request flow for POST /projects/{project_id}/change-orders](base-app/docs/create-change-order-flow.png)
-
-Source: [create-change-order-flow.mmd](base-app/docs/create-change-order-flow.mmd)
-
-| Rule | Status | Error `loc` |
-| --- | --- | --- |
-| Rejects a project that does not exist | 404 | `"Project not found"` (I reused existing dependency) |
-| Rejects a `reference` / `title` that is missing, blank or whitespace-only, or longer than 50 / 255 characters | 422 | `body.reference` / `body.title` |
-| Rejects a `costDelta` that is zero or negative, has more than 2 decimal places, or has more than 12 digits before the decimal point | 422 | `body.costDelta` |
-| Rejects a `scheduleDeltaDays` that is zero or negative, over 3650, or not a JSON integer (`true`, `"5"`, `2.0`) | 422 | `body.scheduleDeltaDays` |
-| Rejects any `status` other than `draft` / `submitted` (defaults to `draft` when omitted) | 422 | `body.status` |
-| Rejects a `raisedDate` that is malformed or more than one day in the future (defaults to today when omitted) | 422 | `body.raisedDate` |
-| Rejects a `workPackageCode` that is missing, blank, unknown, or belongs to another project | 422 | `body.workPackageCode` |
-| Rejects unknown fields (e.g. a client-chosen `id`) | 422 | `body.<field>` |
-| Rejects a `reference` already used on this project, ignoring case | 409 | `body.reference` |
-
-Errors raised by the service use the same `detail: [{loc, msg, type}]` shape as FastAPI's own
-validation errors, so clients parse one format.
-
 ### Decisions
 
 - **Raised date defaults to today.** Logging a change on the day is the common case, and
@@ -90,6 +68,29 @@ validation errors, so clients parse one format.
   being read as `1`.
 - **`extra="forbid"`**, so typos and attempts to set server-owned fields fail loudly instead of
   being dropped silently.
+
+## Validation
+
+![Request flow for POST /projects/{project_id}/change-orders](base-app/docs/create-change-order-flow.png)
+
+Source: [create-change-order-flow.mmd](base-app/docs/create-change-order-flow.mmd)
+
+| Rule | Status | Error `loc` |
+| --- | --- | --- |
+| Rejects a project that does not exist | 404 | `"Project not found"` (I reused existing dependency) |
+| Rejects a `reference` / `title` that is missing, blank or whitespace-only, or longer than 50 / 255 characters | 422 | `body.reference` / `body.title` |
+| Rejects a `costDelta` that is zero or negative, has more than 2 decimal places, or has more than 12 digits before the decimal point | 422 | `body.costDelta` |
+| Rejects a `scheduleDeltaDays` that is zero or negative, over 3650, or not a JSON integer (`true`, `"5"`, `2.0`) | 422 | `body.scheduleDeltaDays` |
+| Rejects any `status` other than `draft` / `submitted` (defaults to `draft` when omitted) | 422 | `body.status` |
+| Rejects a `raisedDate` that is malformed or more than one day in the future (defaults to today when omitted) | 422 | `body.raisedDate` |
+| Rejects a `workPackageCode` that is missing, blank, unknown, or belongs to another project | 422 | `body.workPackageCode` |
+| Rejects unknown fields (e.g. a client-chosen `id`) | 422 | `body.<field>` |
+| Rejects a `reference` already used on this project, ignoring case | 409 | `body.reference` |
+
+Errors raised by the service use the same `detail: [{loc, msg, type}]` shape as FastAPI's own
+validation errors, so clients parse one format.
+
+
 
   ## Concurrency
 
@@ -144,13 +145,11 @@ cd base-app/apps/api && uv run --with pytest-cov pytest --cov=app --cov-report=t
 | Whole API | 97% |
 
 
-
 ## AI / tooling disclosure
 
 I drove the majority of decisions. 
 I first matched a basic working POST using what's in place. i then mapped out the validation logics pretty much as it appears it the png. Initially I added this to router, once I had it working. I ran tests, and then asked claude to move it from the router to a service and ensured tests still passed, then I covered the service with tests.
 Then i tested via CURL and via postman, and prompted claude to surface any edge case I had not, e.g.  the Postgres `int4` overflow, the UTC timezone rejection.
-
 
 - **Environment and QOL:** writing the `makefile` helpers. I asked it give me 1 command spin up, then added easy clearing and seeding
   and commands to to simple day to days, e.g. tests, linting, etc...
