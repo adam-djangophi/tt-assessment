@@ -1,8 +1,8 @@
-# Change order API — test requests
+# Change order API — POST test requests
 
 Every request below was run against a freshly reseeded database (`make clear`), **in order**, and the
 status and result shown are what the API actually returned. Running them out of order changes
-some outcomes: section 4's third request expects `CO-100` from section 2 to exist.
+some outcomes: section 3's third request expects `CO-100` from section 1 to exist.
 
 ## Setup
 
@@ -20,57 +20,7 @@ HARBOUR=33333333-3333-3333-3333-333333333333     # planning (not live: can't rai
 (the not-live 409 uses `loc: ["path", "project_id"]`; the 404 is `{"detail": "Project not found"}`).
 Append `| python3 -m json.tool` to pretty-print.
 
-## 1. Viewing (existing GET)
-
-### List a project's change orders
-
-Riverside has 8 seeded change orders.
-
-```sh
-curl -s "$API/projects/$RIVERSIDE/change-orders"
-```
-
-→ **200** — 8 change order(s)
-
-### Filter by status
-
-`approved` returns 4 for Riverside.
-
-```sh
-curl -s "$API/projects/$RIVERSIDE/change-orders?status=approved"
-```
-
-→ **200** — 4 change order(s)
-
-### Project with no change orders
-
-Harbour (in planning) returns `[]`.
-
-```sh
-curl -s "$API/projects/$HARBOUR/change-orders"
-```
-
-→ **200** — 0 change order(s)
-
-### Invalid status filter
-
-Not a `ChangeOrderStatus` value.
-
-```sh
-curl -s "$API/projects/$RIVERSIDE/change-orders?status=nope"
-```
-
-→ **422** — `status`: Input should be 'draft', 'submitted', 'approved' or 'rejected'
-
-### Unknown project
-
-```sh
-curl -s "$API/projects/nope/change-orders"
-```
-
-→ **404** — `Project not found`
-
-## 2. Raising: success (201)
+## 1. Raising: success (201)
 
 ### Minimal valid body
 
@@ -156,7 +106,7 @@ curl -s -X POST "$API/projects/$METRO/change-orders" \
 
 → **201** — created `CO-008`, status `draft`, raisedDate `2026-10-04`, workPackageCode `WP-01`
 
-## 3. Raising: not found (404)
+## 2. Raising: not found (404)
 
 ### Unknown project
 
@@ -170,7 +120,7 @@ curl -s -X POST "$API/projects/nope/change-orders" \
 
 → **404** — `Project not found`
 
-## 4. Raising: conflicts (409)
+## 3. Raising: conflicts (409)
 
 ### Reference seeded on this project
 
@@ -196,7 +146,7 @@ curl -s -X POST "$API/projects/$METRO/change-orders" \
 
 → **409** — `reference`: Reference 'CO-001' already exists on this project
 
-### Repeat of a request from section 2
+### Repeat of a request from section 1
 
 Re-sending `CO-100` after it was created.
 
@@ -232,7 +182,7 @@ curl -s -X POST "$API/projects/$HARBOUR/change-orders" \
 
 → **422** — `costDelta`: Input should be greater than 0
 
-## 5. Raising: work package errors (422)
+## 4. Raising: work package errors (422)
 
 ### Work package from another project
 
@@ -288,7 +238,7 @@ curl -s -X POST "$API/projects/$METRO/change-orders" \
 
 → **422** — `workPackageCode`: Input should be a valid string
 
-## 6. Raising: value validation (422)
+## 5. Raising: value validation (422)
 
 ### Zero cost
 
@@ -333,6 +283,31 @@ curl -s -X POST "$API/projects/$METRO/change-orders" \
 ```
 
 → **422** — `costDelta`: Decimal input should have no more than 12 digits before the decimal point
+
+### NaN cost (known gap)
+
+Not valid JSON, but Python's parser accepts it. Rejected and nothing is saved, but the 422 fails to
+render (`NaN` can't be serialised back to JSON), so it surfaces as a 500. See SOLUTION.md.
+
+```sh
+curl -s -X POST "$API/projects/$METRO/change-orders" \
+  -H "content-type: application/json" \
+  -d '{"reference": "CO-300", "workPackageCode": "WP-01", "title": "Bad values", "costDelta": NaN, "scheduleDeltaDays": 5}'
+```
+
+→ **500** — `Internal Server Error`
+
+### Infinite cost (known gap)
+
+Same as `NaN`; `-Infinity` behaves the same.
+
+```sh
+curl -s -X POST "$API/projects/$METRO/change-orders" \
+  -H "content-type: application/json" \
+  -d '{"reference": "CO-300", "workPackageCode": "WP-01", "title": "Bad values", "costDelta": Infinity, "scheduleDeltaDays": 5}'
+```
+
+→ **500** — `Internal Server Error`
 
 ### Zero schedule impact
 
@@ -402,7 +377,7 @@ curl -s -X POST "$API/projects/$METRO/change-orders" \
 
 → **422** — `scheduleDeltaDays`: Input should be a valid integer
 
-## 7. Raising: status, date, text and shape (422)
+## 6. Raising: status, date, text and shape (422)
 
 ### Approved on create
 

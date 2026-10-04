@@ -31,8 +31,7 @@ The existing routers query the database inline, and I kept that for reads. This 
 without HTTP and reusable by future edit/import endpoints. `app/domain/` is documented as pure
 (no I/O), so the service lives in a new `app/services/` package instead.
 
-
-- Annotated test requests (every success and error case, with the response each returns): [requests.md](base-app/docs/requests.md)
+- Annotated test requests (every success and error case, with the response each returns): [change_order_post_requests.md](base-app/docs/change_order_post_requests.md)
 
 
 ## Validation
@@ -121,25 +120,46 @@ validation errors, so clients parse one format.
   cleanup, and a way to identify the caller (there's no auth yet), so it's more than this slice
   warrants.
 - **"Today" in the project's timezone** would be more correct than UTC plus one day of slack, but
-  projects have no timezone field.
+  projects have no timezone field. - This would require identifying this this being nullable for exisitng entries is ok
 - **Tests run on SQLite**, which doesn't enforce integer widths or exercise real concurrency.
   A Postgres test run in CI would have caught the `int4` overflow directly.
-- `NaN` / `Infinity` in `costDelta` (not valid JSON, but accepted by Python's parser) are rejected,
+- `NaN` / `Infinity` in `costDelta` (not valid JSON, but accepted by Python's parser) are rejected - Gives 500 -  Fix would be a RequestValidationError handler that converts non-finite input values to strings before rendering th§e 422.
   but FastAPI then fails to render the 422, which surfaces as a 500. Nothing is saved.
 - No auth or roles, audit trail, or edit/approve workflow. Those are out of scope for this slice.
 
+## Testing
+
+63 tests pass (`make test`); ruff and mypy are clean. The repo has no coverage tooling, so I ran it
+one-off without adding a dependency:
+
+```bash
+cd base-app/apps/api && uv run --with pytest-cov pytest --cov=app --cov-report=term-missing
+```
+
+| File | Coverage |
+| --- | --- |
+| `app/routers/change_orders.py` | 100% |
+| `app/services/change_orders.py` | 100% |
+| `app/schemas.py` | 100% |
+| Whole API | 97% |
+
+
+
 ## AI / tooling disclosure
 
-I drove the majority of decisions
-- restricting rather than removing `status` on create, 
-- thinning the controller into a service, 
+I drove the majority of decisions. 
+I first matched a basic working POST using what's in place. i then mapped out the validation logics pretty much as it appears it the png. Initially I added this to router, once I had it working. I ran tests, and then asked claude to move it from the router to a service and ensured tests still passed, then I covered the service with tests.
+Then i tested via CURL and via postman, and prompted claude to surface any edge case I had not, e.g.  the Postgres `int4` overflow, the UTC timezone rejection.
 
-- **Environment:** writing the `makefile` helpers.
-- **Implementation:** I proposed the schema rules, router and service code. I applied
-  and edited most of it myself, step by step, and asked Claude to validate my edits along the way.
+
+- **Environment and QOL:** writing the `makefile` helpers. I asked it give me 1 command spin up, then added easy clearing and seeding
+  and commands to to simple day to days, e.g. tests, linting, etc...
+- **Partial Implementation:** I proposed the schema rules, router and service code. I applied
+  and edited most of it myself, step by step, and asked Claude to validate my edits along the way. It also helped refactor and move bits
 - **Tests:** Claude wrote most of the test code at my request. I reviewed and ran it.
 - **Review:** at my prompting, Claude probed the running API with edge cases and reviewed for
-  races. That found the Postgres `int4` overflow, case-sensitive duplicates, the UTC timezone
-  rejection, and the over-broad `IntegrityError` handling, all fixed above.
+  races. That found the Postgres `int4` overflow, the UTC timezone rejection, all fixed above.
+- **Images and Requests:** at my prompting claude created mermaid diagrams details changes thus, it needed asking twice
+to get to the simplfied validation flows as its initial image was too busy. I also had it spit out a load of CURL requests that can be used to test the end point thoroughly.
 
 
