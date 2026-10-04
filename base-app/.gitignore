@@ -12,6 +12,18 @@ coverage/
 !.yarn/releases
 .pnp.*
 
+# Build / test output
+build/
+out-tsc/
+*.tsbuildinfo
+.cache/
+.eslintcache
+test-results/
+**/cypress/screenshots/
+**/cypress/videos/
+.coverage
+htmlcov/
+
 # Logs
 *.log
 

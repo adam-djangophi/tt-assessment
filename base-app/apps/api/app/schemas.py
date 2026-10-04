@@ -1,12 +1,14 @@
-from datetime import date
-from typing import Generic, TypeVar
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Annotated, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, field_validator
 from pydantic.alias_generators import to_camel
 
 from app.enums import (
     BenchmarkPosition,
     ChangeOrderStatus,
+    CreateChangeOrderStatus,
     ProjectStatus,
     RagStatus,
 )
@@ -81,6 +83,39 @@ class ChangeOrder(CamelModel):
     cost_delta: float
     schedule_delta_days: int
     raised_date: date
+
+
+class ChangeOrderCreate(CamelModel):
+    """Request body for creating a new change order."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    work_package_code: str = Field(min_length=1, max_length=50)
+    status: CreateChangeOrderStatus = CreateChangeOrderStatus.DRAFT
+    reference: str = Field(min_length=1, max_length=50)
+    title: str = Field(min_length=1, max_length=255)
+    cost_delta: Annotated[
+        Decimal,
+        Field(gt=0, max_digits=14, decimal_places=2),
+        WithJsonSchema({"type": "number", "exclusiveMinimum": 0}),
+    ]
+    schedule_delta_days: int = Field(gt=0, le=3650, strict=True)
+    raised_date: date = Field(default_factory=date.today)
+
+    @field_validator("raised_date")
+    @classmethod
+    def not_in_future(cls, v: date) -> date:
+        # The server runs in UTC; a planner in a timezone ahead of UTC may already be on
+        # tomorrow's date, so allow one day of slack rather than reject their "today".
+        if v > date.today() + timedelta(days=1):
+            raise ValueError("raisedDate cannot be in the future")
+        return v
+
+    @field_validator("reference", "work_package_code")
+    @classmethod
+    def normalise_code(cls, v: str) -> str:
+        """Codes are case-insensitive; store them upper-cased so 'co-001' == 'CO-001'."""
+        return v.upper()
 
 
 class PaginatedResponse(CamelModel, Generic[T]):

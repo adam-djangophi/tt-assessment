@@ -1,0 +1,23 @@
+---
+title: POST /projects/{project_id}/change-orders
+---
+flowchart TD
+    start([Raise change order]) --> project{Project exists?}
+    project -- yes --> body{Body valid?}
+    body -- yes --> live{Project live?}
+    live -- yes --> wp{Work package OK?}
+    wp -- yes --> ref{Reference unique?}
+    ref -- yes --> save[Save]
+    save --> created([201 Created])
+
+    project -- no --> e404[404 Not found]
+    body -- no --> e422a[422 Invalid field]
+    live -- no --> e409a[409 Project not live]
+    wp -- no --> e422b[422 Invalid work package]
+    ref -- no --> e409b[409 Duplicate reference]
+    save -. race lost .-> e409b
+
+    classDef err fill:#fde2e1,stroke:#c0392b,color:#7b241c
+    classDef ok fill:#dff5e3,stroke:#1e8449,color:#145a32
+    class e404,e422a,e409a,e422b,e409b err
+    class created ok

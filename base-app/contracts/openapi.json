@@ -306,6 +306,70 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "change-orders"
+        ],
+        "summary": "Create Change Order",
+        "description": "Create a new change order for a project.",
+        "operationId": "createChangeOrder",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeOrderCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeOrder"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reference already used for this project, or project not live"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/projects/{project_id}/benchmarks": {
@@ -477,6 +541,59 @@
         "title": "ChangeOrder",
         "description": "A change order with cost and schedule impact."
       },
+      "ChangeOrderCreate": {
+        "properties": {
+          "workPackageCode": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Workpackagecode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreateChangeOrderStatus",
+            "default": "draft"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "costDelta": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Costdelta"
+          },
+          "scheduleDeltaDays": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Scheduledeltadays"
+          },
+          "raisedDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Raiseddate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workPackageCode",
+          "reference",
+          "title",
+          "costDelta",
+          "scheduleDeltaDays"
+        ],
+        "title": "ChangeOrderCreate",
+        "description": "Request body for creating a new change order."
+      },
       "ChangeOrderStatus": {
         "type": "string",
         "enum": [
@@ -527,6 +644,29 @@
         ],
         "title": "CostSnapshot",
         "description": "A single month's baseline, forecast, and actual cost figures."
+      },
+      "CreateChangeOrderStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "submitted"
+        ],
+        "title": "CreateChangeOrderStatus",
+        "description": "Statuses allowed when creating a change order."
+      },
+      "ErrorResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "description": "Standard error response body."
       },
       "HTTPValidationError": {
         "properties": {

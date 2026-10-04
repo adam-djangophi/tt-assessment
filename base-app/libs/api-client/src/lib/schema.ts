@@ -97,7 +97,11 @@ export interface paths {
          */
         get: operations["listChangeOrders"];
         put?: never;
-        post?: never;
+        /**
+         * Create Change Order
+         * @description Create a new change order for a project.
+         */
+        post: operations["createChangeOrder"];
         delete?: never;
         options?: never;
         head?: never;
@@ -179,6 +183,29 @@ export interface components {
             raisedDate: string;
         };
         /**
+         * ChangeOrderCreate
+         * @description Request body for creating a new change order.
+         */
+        ChangeOrderCreate: {
+            /** Workpackagecode */
+            workPackageCode: string;
+            /** @default draft */
+            status: components["schemas"]["CreateChangeOrderStatus"];
+            /** Reference */
+            reference: string;
+            /** Title */
+            title: string;
+            /** Costdelta */
+            costDelta: number;
+            /** Scheduledeltadays */
+            scheduleDeltaDays: number;
+            /**
+             * Raiseddate
+             * Format: date
+             */
+            raisedDate?: string;
+        };
+        /**
          * ChangeOrderStatus
          * @enum {string}
          */
@@ -201,6 +228,20 @@ export interface components {
             forecastCost: number;
             /** Actualcost */
             actualCost: number;
+        };
+        /**
+         * CreateChangeOrderStatus
+         * @description Statuses allowed when creating a change order.
+         * @enum {string}
+         */
+        CreateChangeOrderStatus: "draft" | "submitted";
+        /**
+         * ErrorResponse
+         * @description Standard error response body.
+         */
+        ErrorResponse: {
+            /** Detail */
+            detail: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -474,6 +515,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChangeOrder"][];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createChangeOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeOrderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeOrder"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reference already used for this project, or project not live */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
